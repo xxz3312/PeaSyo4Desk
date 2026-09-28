@@ -69,7 +69,7 @@ try {
   # Bound the wait so the UI receives a useful error on restricted networks.
   $holepunchFile = Join-Path $chiaki 'lib\src\remote\holepunch.c'
   $holepunchText = [IO.File]::ReadAllText($holepunchFile)
-  $waitOld = 'err = chiaki_cond_wait(&session->state_cond, &session->state_mutex);' + "`n" + '        assert(err == CHIAKI_ERR_SUCCESS);'
+  $waitRegex = [regex]::new('err = chiaki_cond_wait\(&session->state_cond, &session->state_mutex\);\r?\n[ \t]*assert\(err == CHIAKI_ERR_SUCCESS\);')
   $waitNew = @'
 err = chiaki_cond_timedwait(&session->state_cond, &session->state_mutex, 15000);
         if(err != CHIAKI_ERR_SUCCESS)
@@ -79,10 +79,10 @@ err = chiaki_cond_timedwait(&session->state_cond, &session->state_mutex, 15000);
         }
 '@
   $waitNew = $waitNew.TrimEnd()
-  if (-not $holepunchText.Contains($waitOld)) {
+  if (-not $waitRegex.IsMatch($holepunchText)) {
     throw 'Unexpected Chiaki WebSocket wait; inspect the PSN timeout patch.'
   }
-  $holepunchText = $holepunchText.Replace($waitOld, $waitNew)
+  $holepunchText = $waitRegex.Replace($holepunchText, $waitNew, 1)
   $connectMarker = 'res = curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);'
   if (-not $holepunchText.Contains($connectMarker)) {
     throw 'Unexpected Chiaki WebSocket connect setup.'
