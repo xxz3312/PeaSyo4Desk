@@ -29,10 +29,10 @@ and creates `dist\win-arm64-unpacked`.
 
 ## Known limits
 
-- **No finished ARM64 binary is included.** This script has only been
-  inspected on Linux x64, where the Windows MSVC toolchain and runtime are not
-  available. Run it on Windows ARM64 and inspect each build failure before
-  claiming a working application.
+- The GitHub Actions workflow produced an ARM64 unpacked package on the
+  Windows ARM runner. This verifies compilation and packaging, but the
+  application has not yet been tested with a console and controller on a
+  user's Windows ARM64 device.
 - The supplied `chiaki-lib` is not the same implementation as the desktop
   application's `peasyo-lib`. Its Node binding lacks the
   `remote.listDevices`, `remote.prepareConnection`,
