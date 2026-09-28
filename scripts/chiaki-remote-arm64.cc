@@ -72,12 +72,29 @@ void ReportProgress(RemoteWork *work, const char *stage, int progress) {
     }
 }
 
-void QuietLog(ChiakiLogLevel, const char *, void *) {}
+std::mutex diagnostic_mutex;
+std::string websocket_diagnostic;
+
+void DiagnosticLog(ChiakiLogLevel, const char *message, void *) {
+    if(!message)
+        return;
+    const std::string line(message);
+    // Chiaki also logs the OAuth header. Only retain known WebSocket failure
+    // messages; never include arbitrary native logs or PSN credentials.
+    if(line.find("Connecting to push notification WebSocket") == std::string::npos &&
+       line.find("websocket_thread_func: Curl could not init") == std::string::npos)
+        return;
+    const auto failure = line.find("failed with ");
+    if(failure == std::string::npos)
+        return;
+    std::lock_guard<std::mutex> lock(diagnostic_mutex);
+    websocket_diagnostic = line.substr(failure, 200);
+}
 
 ChiakiLog *RemoteLog() {
     static ChiakiLog log;
     static std::once_flag once;
-    std::call_once(once, [] { chiaki_log_init(&log, CHIAKI_LOG_ERROR, QuietLog, nullptr); });
+    std::call_once(once, [] { chiaki_log_init(&log, CHIAKI_LOG_ERROR, DiagnosticLog, nullptr); });
     return &log;
 }
 
@@ -145,6 +162,10 @@ bool ListDevices(RemoteWork *work, ChiakiHolepunchConsoleType type, std::vector<
 
 void ExecuteRemote(napi_env, void *data) {
     auto *work = static_cast<RemoteWork *>(data);
+    {
+        std::lock_guard<std::mutex> lock(diagnostic_mutex);
+        websocket_diagnostic.clear();
+    }
     ReportProgress(work, "holepunchInit", 20);
     std::vector<Device> devices;
     bool ps5 = ListDevices(work, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5, &devices);
@@ -203,11 +224,16 @@ void CompleteRemote(napi_env env, napi_status status, void *data) {
     auto *work = static_cast<RemoteWork *>(data);
     if(work->progress) napi_release_threadsafe_function(work->progress, napi_tsfn_release);
     if(status != napi_ok || work->error != CHIAKI_ERR_SUCCESS) {
-        if(work->session)
-            chiaki_holepunch_session_fini(work->session);
         std::string message = "[REMOTE_PREPARE_FAILED] stage=" + work->stage +
             " nativeCode=" + std::to_string(static_cast<int>(work->error)) +
             " message=" + chiaki_error_string(work->error);
+        if(work->stage == "holepunchWebSocketOpen") {
+            std::lock_guard<std::mutex> lock(diagnostic_mutex);
+            if(!websocket_diagnostic.empty())
+                message += "; websocket=" + websocket_diagnostic;
+        }
+        if(work->session)
+            chiaki_holepunch_session_fini(work->session);
         napi_value text, error;
         napi_create_string_utf8(env, message.c_str(), NAPI_AUTO_LENGTH, &text);
         napi_create_error(env, nullptr, text, &error);
