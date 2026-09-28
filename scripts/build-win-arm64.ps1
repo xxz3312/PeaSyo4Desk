@@ -60,9 +60,10 @@ try {
   if (-not $nodeCmakeText.Contains($oldTarget)) {
     throw 'Unexpected chiaki-lib node/CMakeLists.txt; inspect the Electron delay-load hook.'
   }
-  [IO.File]::WriteAllText($nodeCmake,
-    $nodeCmakeText.Replace($oldTarget,
-      'add_library(chiaki_node MODULE addon.cc wrappers.cc ${CMAKE_JS_SRC})'))
+  $replacement = 'add_library(chiaki_node MODULE addon.cc wrappers.cc ${CMAKE_JS_SRC})' + "`n" +
+    'target_link_options(chiaki_node PRIVATE "/DELAYLOAD:node.exe")' + "`n" +
+    'target_link_libraries(chiaki_node PRIVATE delayimp)'
+  [IO.File]::WriteAllText($nodeCmake, $nodeCmakeText.Replace($oldTarget, $replacement))
   $env:npm_config_arch = 'arm64'
   $env:VCPKG_TARGET_TRIPLET = 'arm64-windows-static'
   $electronVersion = (Get-Content (Join-Path $AppRoot 'node_modules\electron\package.json') -Raw |
