@@ -29,15 +29,16 @@ and creates `dist\win-arm64-unpacked`.
 
 ## Known limits
 
-- The application has launched and detected a controller on a user's Windows
-  on ARM device. Console registration and live streaming still need testing.
+- The application has launched, detected a controller, and streamed
+  successfully on a user's Windows on ARM device. Internet remote connection
+  has not been verified separately.
 - The supplied `chiaki-lib` is not the same implementation as the desktop
   application's `peasyo-lib`. Its Node binding lacks the
   `remote.listDevices`, `remote.prepareConnection`,
   `remote.prepareSession`, and `remote.autoRegist` APIs. Online remote
   connection will need a port or an alternative compatible ARM64
-  `peasyo-lib` build. Local discovery, registration and streaming also need
-  a real Windows ARM64 smoke test.
+  `peasyo-lib` build. The user has confirmed streaming works on Windows ARM64,
+  but the unsupported remote API paths remain unverified.
 - `node-hid` is rebuilt by `electron-builder install-app-deps`; verify the
   resulting `.node` and controller access on the target machine.
 - All `.node` files and SDL2.dll must be ARM64 PE binaries. An x64 FFmpeg.exe

@@ -169,7 +169,7 @@ jobs:
             'Extract the entire ZIP and run `PeaSyo4Desk.exe`. Node.js is not required.',
             '',
             "Source commit: $env:GITHUB_SHA",
-            'The app has launched and detected a controller on a Windows on ARM device. Console streaming has not yet been verified for this fork. The Chiaki binding lacks some remote.* APIs, so internet remote connection may be unavailable.'
+            'The app has launched, detected a controller, and streamed successfully on a Windows on ARM device. The Chiaki binding lacks some remote.* APIs; internet remote connection has not been verified separately and may be unavailable.'
           ) | Set-Content $notes
           gh release view $tag --json tagName --jq .tagName *> $null
           if ($LASTEXITCODE -eq 0) {
