@@ -88,8 +88,24 @@ jobs:
         run: |
           $env:ELECTRON_RUN_AS_NODE = '1'
           $addon = (Resolve-Path 'dist\win-arm64-unpacked\resources\app.asar.unpacked\peasyo-lib\native\1.0.10\peasyo-lib.win32-arm64-msvc.node').Path
-          & 'dist\win-arm64-unpacked\PeaSyo4Desk.exe' -e 'const binding=require(process.argv[1]); if (typeof binding.Session !== "function") throw Error("Missing Session"); console.log("Packaged Electron loaded Chiaki")' $addon
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged Electron could not load Chiaki' }
+          $probe = Join-Path $env:RUNNER_TEMP 'probe-chiaki.cjs'
+          $result = Join-Path $env:RUNNER_TEMP 'probe-chiaki-result.txt'
+          @'
+          const fs = require('fs');
+          try {
+            const binding = require(process.argv[2]);
+            if (typeof binding.Session !== 'function') throw Error('Missing Session');
+            fs.writeFileSync(process.argv[3], `loaded with Electron ${process.versions.electron}`);
+          } catch (error) {
+            fs.writeFileSync(process.argv[3], error.stack || String(error));
+            process.exitCode = 1;
+          }
+          '@ | Set-Content $probe
+          & 'dist\win-arm64-unpacked\PeaSyo4Desk.exe' $probe $addon $result
+          $code = $LASTEXITCODE
+          if (-not (Test-Path $result)) { throw "Electron did not execute the probe (exit $code)" }
+          Get-Content $result
+          if ($code -ne 0) { throw "Packaged Electron could not load Chiaki (exit $code)" }
       - uses: actions/upload-artifact@v4
         if: success()
         with:
