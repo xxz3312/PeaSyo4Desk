@@ -101,8 +101,13 @@ jobs:
             process.exitCode = 1;
           }
           '@ | Set-Content $probe
-          & 'dist\win-arm64-unpacked\PeaSyo4Desk.exe' $probe $addon $result
-          $code = $LASTEXITCODE
+          $exe = (Resolve-Path 'dist\win-arm64-unpacked\PeaSyo4Desk.exe').Path
+          $process = Start-Process -FilePath $exe -ArgumentList @($probe, $addon, $result) -PassThru
+          if (-not $process.WaitForExit(30000)) {
+            Stop-Process -Id $process.Id -Force
+            throw 'Packaged Electron probe timed out'
+          }
+          $code = $process.ExitCode
           if (-not (Test-Path $result)) { throw "Electron did not execute the probe (exit $code)" }
           Get-Content $result
           if ($code -ne 0) { throw "Packaged Electron could not load Chiaki (exit $code)" }
