@@ -34,6 +34,7 @@ struct RemoteWork {
     std::string token;
     std::string uid;
     std::string nickname;
+    std::string selectedDevice;
     std::string stage;
     ChiakiErrorCode error = CHIAKI_ERR_SUCCESS;
     ChiakiHolepunchSession session = nullptr;
@@ -75,11 +76,18 @@ void ReportProgress(RemoteWork *work, const char *stage, int progress) {
 
 std::mutex diagnostic_mutex;
 std::string websocket_diagnostic;
+std::string remote_start_diagnostic;
 
 void DiagnosticLog(ChiakiLogLevel, const char *message, void *) {
     if(!message)
         return;
     const std::string line(message);
+    if(line.find("arm64 remote ") != std::string::npos) {
+        std::lock_guard<std::mutex> lock(diagnostic_mutex);
+        if(!remote_start_diagnostic.empty()) remote_start_diagnostic += "; ";
+        remote_start_diagnostic += line.substr(0, 180);
+        return;
+    }
     // Chiaki also logs the OAuth header. Only retain known WebSocket failure
     // messages; never include arbitrary native logs or PSN credentials.
     if(line.find("Connecting to push notification WebSocket") == std::string::npos &&
@@ -166,6 +174,7 @@ void ExecuteRemote(napi_env, void *data) {
     {
         std::lock_guard<std::mutex> lock(diagnostic_mutex);
         websocket_diagnostic.clear();
+        remote_start_diagnostic.clear();
     }
     ReportProgress(work, "holepunchInit", 20);
     std::vector<Device> devices;
@@ -195,6 +204,7 @@ void ExecuteRemote(napi_env, void *data) {
         work->error = CHIAKI_ERR_INVALID_DATA;
         return;
     }
+    work->selectedDevice = selected->name;
 
     ReportProgress(work, "holepunchWebSocketOpen", 35);
     work->session = chiaki_holepunch_session_init(work->token.c_str(), RemoteLog());
@@ -232,6 +242,12 @@ void CompleteRemote(napi_env env, napi_status status, void *data) {
             std::lock_guard<std::mutex> lock(diagnostic_mutex);
             if(!websocket_diagnostic.empty())
                 message += "; websocket=" + websocket_diagnostic;
+        }
+        if(work->stage == "holepunchOfferSent") {
+            std::lock_guard<std::mutex> lock(diagnostic_mutex);
+            message += "; selectedDevice=" + work->selectedDevice;
+            if(!remote_start_diagnostic.empty())
+                message += "; remote=" + remote_start_diagnostic;
         }
         if(work->session)
             chiaki_holepunch_session_fini(work->session);

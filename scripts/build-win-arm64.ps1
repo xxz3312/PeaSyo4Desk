@@ -83,6 +83,27 @@ err = chiaki_cond_timedwait(&session->state_cond, &session->state_mutex, 15000);
     throw 'Unexpected Chiaki WebSocket wait; inspect the PSN timeout patch.'
   }
   $holepunchText = $waitRegex.Replace($holepunchText, $waitNew, 1)
+  $startTimeout = 'CHIAKI_LOGE(session->log, "chiaki_holepunch_session_start: Timed out waiting for holepunch session start notifications.");'
+  $startTimeoutDetail = @'
+chiaki_mutex_lock(&session->state_mutex);
+            CHIAKI_LOGE(session->log, "arm64 remote start timeout consoleJoined=%d customDataReceived=%d",
+                !!(session->state & SESSION_STATE_CONSOLE_JOINED),
+                !!(session->state & SESSION_STATE_CUSTOMDATA1_RECEIVED));
+            chiaki_mutex_unlock(&session->state_mutex);
+'@
+  if (-not $holepunchText.Contains($startTimeout)) {
+    throw 'Unexpected Chiaki session-start timeout handling.'
+  }
+  $holepunchText = $holepunchText.Replace($startTimeout, $startTimeoutDetail.TrimEnd() + "`n            " + $startTimeout)
+  $commandAccepted = 'session->state |= SESSION_STATE_DATA_SENT;'
+  if (-not $holepunchText.Contains($commandAccepted)) {
+    throw 'Unexpected Chiaki PSN remote command handling.'
+  }
+  $holepunchText = $holepunchText.Replace($commandAccepted,
+    'long arm64_remote_http_code = 0;' + "`n    " +
+    'curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &arm64_remote_http_code);' + "`n    " +
+    'CHIAKI_LOGE(session->log, "arm64 remote command accepted http=%ld", arm64_remote_http_code);' + "`n    " +
+    $commandAccepted)
   $connectMarker = 'res = curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);'
   if (-not $holepunchText.Contains($connectMarker)) {
     throw 'Unexpected Chiaki WebSocket connect setup.'
