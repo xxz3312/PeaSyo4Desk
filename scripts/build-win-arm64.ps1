@@ -52,6 +52,17 @@ if (-not (Test-Path $chiaki)) {
 Push-Location $chiaki
 try {
   Run npm @('ci')
+  # cmake-js supplies Electron's Windows delay-load hook in CMAKE_JS_SRC.
+  # chiaki-lib's CMake target omits it, leaving a hard dependency on node.exe.
+  $nodeCmake = Join-Path $chiaki 'node\CMakeLists.txt'
+  $nodeCmakeText = [IO.File]::ReadAllText($nodeCmake)
+  $oldTarget = 'add_library(chiaki_node MODULE addon.cc wrappers.cc)'
+  if (-not $nodeCmakeText.Contains($oldTarget)) {
+    throw 'Unexpected chiaki-lib node/CMakeLists.txt; inspect the Electron delay-load hook.'
+  }
+  [IO.File]::WriteAllText($nodeCmake,
+    $nodeCmakeText.Replace($oldTarget,
+      'add_library(chiaki_node MODULE addon.cc wrappers.cc ${CMAKE_JS_SRC})'))
   $env:npm_config_arch = 'arm64'
   $env:VCPKG_TARGET_TRIPLET = 'arm64-windows-static'
   $electronVersion = (Get-Content (Join-Path $AppRoot 'node_modules\electron\package.json') -Raw |
@@ -80,8 +91,7 @@ if (-not (Test-Path $sdlSource)) {
 $sdlInstall = Join-Path $WorkRoot 'sdl-install'
 Run cmake @('-S', $sdlSource, '-B', (Join-Path $WorkRoot 'sdl-build'),
   '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DCMAKE_INSTALL_PREFIX=$sdlInstall",
-  '-DSDL_SHARED=ON', '-DSDL_STATIC=OFF', '-DSDL_TESTS=OFF',
-  '-DCMAKE_C_FLAGS=/forceInterlockedFunctions-')
+  '-DSDL_SHARED=ON', '-DSDL_STATIC=OFF', '-DSDL_TESTS=OFF')
 Run cmake @('--build', (Join-Path $WorkRoot 'sdl-build'), '--parallel')
 Run cmake @('--install', (Join-Path $WorkRoot 'sdl-build'))
 
@@ -129,6 +139,15 @@ Push-Location $AppRoot
 try {
   Run (Get-Command yarn).Source @('nextron', 'build', '--no-pack')
   Run (Get-Command yarn).Source @('electron-builder', '--win', '--arm64', '--dir')
+  # vcpkg's static libraries still use the dynamic MSVC runtime. Bundle the
+  # redistributable ARM64 CRT beside the Electron executable for clean hosts.
+  $crtDir = Join-Path $env:VCToolsRedistDir 'arm64\Microsoft.VC143.CRT'
+  $outDir = Join-Path $AppRoot 'dist\win-arm64-unpacked'
+  foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll')) {
+    $source = Join-Path $crtDir $dll
+    if (-not (Test-Path $source)) { throw "ARM64 VC runtime is missing: $source" }
+    Copy-Item $source $outDir
+  }
   Write-Host "Package: $(Join-Path $AppRoot 'dist\win-arm64-unpacked')"
   Write-Warning 'chiaki-lib has no peasyo remote.* API; LAN streaming must be tested separately.'
 }
