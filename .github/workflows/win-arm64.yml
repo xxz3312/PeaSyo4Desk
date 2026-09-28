@@ -77,7 +77,7 @@ jobs:
       - name: Load native bindings and inspect packaged files
         shell: pwsh
         run: |
-          node -e "const p=require('./peasyo-lib'); if (typeof p.Session !== 'function') throw Error('Missing Session'); console.log('Chiaki Session loaded')"
+          node -e "const p=require('./peasyo-lib'); if (typeof p.Session !== 'function' || typeof p.remotePrepareSession !== 'function') throw Error('Missing Chiaki Session or remotePrepareSession'); console.log('Chiaki Session and remote bridge loaded')"
           if ($LASTEXITCODE -ne 0) { throw 'Could not load chiaki native binding' }
           node -e "const s=require('./node_modules/peasyo-sdl-lib'); if (!s.controller) throw Error('Missing SDL controller API'); console.log('SDL binding loaded')"
           if ($LASTEXITCODE -ne 0) { throw 'Could not load SDL native binding' }
@@ -110,7 +110,7 @@ jobs:
           try {
             if (process.argv[3]) {
               const binding = require(process.argv[3]);
-              if (typeof binding.Session !== 'function') throw Error('Missing Session');
+              if (typeof binding.Session !== 'function' || typeof binding.remotePrepareSession !== 'function') throw Error('Missing Session or remotePrepareSession');
             }
             fs.writeFileSync(process.argv[2], `loaded with Electron ${process.versions.electron}, binding=${!!process.argv[3]}`);
           } catch (error) {
@@ -169,7 +169,7 @@ jobs:
             'Extract the entire ZIP and run `PeaSyo4Desk.exe`. Node.js is not required.',
             '',
             "Source commit: $env:GITHUB_SHA",
-            'The app has launched, detected a controller, and streamed successfully on a Windows on ARM device. The Chiaki binding lacks some remote.* APIs; internet remote connection has not been verified separately and may be unavailable.'
+            'The app has launched, detected a controller, and streamed successfully on a Windows on ARM device. This build adds an experimental native PSN remote-session bridge. Internet remote streaming still needs testing on a real console and network.'
           ) | Set-Content $notes
           gh release view $tag --json tagName --jq .tagName *> $null
           if ($LASTEXITCODE -eq 0) {

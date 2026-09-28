@@ -60,10 +60,57 @@ try {
   if (-not $nodeCmakeText.Contains($oldTarget)) {
     throw 'Unexpected chiaki-lib node/CMakeLists.txt; inspect the Electron delay-load hook.'
   }
-  $replacement = 'add_library(chiaki_node MODULE addon.cc wrappers.cc ${CMAKE_JS_SRC})' + "`n" +
+  Copy-Item (Join-Path $AppRoot 'scripts\chiaki-remote-arm64.cc') (Join-Path $chiaki 'node\remote_arm64.cc')
+  $replacement = 'add_library(chiaki_node MODULE addon.cc wrappers.cc remote_arm64.cc ${CMAKE_JS_SRC})' + "`n" +
     'target_link_options(chiaki_node PRIVATE "/DELAYLOAD:node.exe")' + "`n" +
     'target_link_libraries(chiaki_node PRIVATE delayimp)'
   [IO.File]::WriteAllText($nodeCmake, $nodeCmakeText.Replace($oldTarget, $replacement))
+  $addonFile = Join-Path $chiaki 'node\addon.cc'
+  $addonText = [IO.File]::ReadAllText($addonFile)
+  $addonMarker = 'extern napi_status RegisterCoreApiClasses(napi_env env, napi_value exports);'
+  $registerMarker = 'NAPI_CALL_OR_RETURN_NULL(env, RegisterCoreApiClasses(env, exports));'
+  if (-not $addonText.Contains($addonMarker) -or -not $addonText.Contains($registerMarker)) {
+    throw 'Unexpected chiaki-lib addon.cc; inspect the remote bridge integration.'
+  }
+  $addonText = $addonText.Replace($addonMarker,
+    "$addonMarker`nextern napi_status RegisterArm64Remote(napi_env env, napi_value exports);")
+  $addonText = $addonText.Replace($registerMarker,
+    "$registerMarker`n`tNAPI_CALL_OR_RETURN_NULL(env, RegisterArm64Remote(env, exports));")
+  [IO.File]::WriteAllText($addonFile, $addonText)
+  $wrapperFile = Join-Path $chiaki 'node\wrappers.cc'
+  $wrapperText = [IO.File]::ReadAllText($wrapperFile)
+  $includeMarker = '#include <chiaki/session.h>'
+  $sessionMarker = 'ChiakiErrorCode err = chiaki_session_init(&wrap->session, &connect_info, &wrap->log);'
+  if (-not $wrapperText.Contains($includeMarker) -or -not $wrapperText.Contains($sessionMarker)) {
+    throw 'Unexpected chiaki-lib wrappers.cc; inspect the remote session handoff.'
+  }
+  $wrapperText = $wrapperText.Replace($includeMarker,
+    "$includeMarker`n`nChiakiHolepunchSession TakeArm64PreparedRemote(napi_env env, napi_value value);")
+  $handoff = @'
+{
+    napi_value prepared;
+    bool has_prepared = false;
+    if(!GetNamedProperty(env, argv[0], "preparedRemote", &prepared, &has_prepared))
+    {
+        SessionCloseInternal(wrap);
+        delete wrap;
+        return nullptr;
+    }
+    if(has_prepared && !IsNullOrUndefined(env, prepared))
+    {
+        connect_info.holepunch_session = TakeArm64PreparedRemote(env, prepared);
+        if(!connect_info.holepunch_session)
+        {
+            SessionCloseInternal(wrap);
+            delete wrap;
+            return nullptr;
+        }
+    }
+}
+
+'@
+  $wrapperText = $wrapperText.Replace($sessionMarker, "$handoff`t$sessionMarker")
+  [IO.File]::WriteAllText($wrapperFile, $wrapperText)
   $env:npm_config_arch = 'arm64'
   $env:VCPKG_TARGET_TRIPLET = 'arm64-windows-static'
   $electronVersion = (Get-Content (Join-Path $AppRoot 'node_modules\electron\package.json') -Raw |
