@@ -65,6 +65,31 @@ try {
     'target_link_options(chiaki_node PRIVATE "/DELAYLOAD:node.exe")' + "`n" +
     'target_link_libraries(chiaki_node PRIVATE delayimp)'
   [IO.File]::WriteAllText($nodeCmake, $nodeCmakeText.Replace($oldTarget, $replacement))
+  # Upstream waits indefinitely when the PSN push WebSocket cannot open.
+  # Bound the wait so the UI receives a useful error on restricted networks.
+  $holepunchFile = Join-Path $chiaki 'lib\src\remote\holepunch.c'
+  $holepunchText = [IO.File]::ReadAllText($holepunchFile)
+  $waitOld = 'err = chiaki_cond_wait(&session->state_cond, &session->state_mutex);' + "`n" + '        assert(err == CHIAKI_ERR_SUCCESS);'
+  $waitNew = @'
+err = chiaki_cond_timedwait(&session->state_cond, &session->state_mutex, 15000);
+        if(err != CHIAKI_ERR_SUCCESS)
+        {
+            chiaki_mutex_unlock(&session->state_mutex);
+            return err;
+        }
+'@
+  $waitNew = $waitNew.TrimEnd()
+  if (-not $holepunchText.Contains($waitOld)) {
+    throw 'Unexpected Chiaki WebSocket wait; inspect the PSN timeout patch.'
+  }
+  $holepunchText = $holepunchText.Replace($waitOld, $waitNew)
+  $connectMarker = 'res = curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);'
+  if (-not $holepunchText.Contains($connectMarker)) {
+    throw 'Unexpected Chiaki WebSocket connect setup.'
+  }
+  $holepunchText = $holepunchText.Replace($connectMarker,
+    'curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);' + "`n    " + $connectMarker)
+  [IO.File]::WriteAllText($holepunchFile, $holepunchText)
   $addonFile = Join-Path $chiaki 'node\addon.cc'
   $addonText = [IO.File]::ReadAllText($addonFile)
   $addonMarker = 'extern napi_status RegisterCoreApiClasses(napi_env env, napi_value exports);'

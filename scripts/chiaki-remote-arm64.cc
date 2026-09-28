@@ -36,7 +36,41 @@ struct RemoteWork {
     std::string stage;
     ChiakiErrorCode error = CHIAKI_ERR_SUCCESS;
     ChiakiHolepunchSession session = nullptr;
+    napi_threadsafe_function progress = nullptr;
 };
+
+struct ProgressEvent {
+    const char *stage;
+    int progress;
+};
+
+void DeliverProgress(napi_env env, napi_value callback, void *, void *data) {
+    auto *event = static_cast<ProgressEvent *>(data);
+    if(env && callback) {
+        napi_value payload, stage, progress, state, global;
+        if(napi_create_object(env, &payload) == napi_ok &&
+           napi_create_string_utf8(env, event->stage, NAPI_AUTO_LENGTH, &stage) == napi_ok &&
+           napi_create_int32(env, event->progress, &progress) == napi_ok &&
+           napi_create_int32(env, 0, &state) == napi_ok &&
+           napi_get_global(env, &global) == napi_ok) {
+            napi_set_named_property(env, payload, "stage", stage);
+            napi_set_named_property(env, payload, "progress", progress);
+            napi_set_named_property(env, payload, "state", state);
+            napi_value ignored;
+            napi_call_function(env, global, callback, 1, &payload, &ignored);
+        }
+    }
+    delete event;
+}
+
+void ReportProgress(RemoteWork *work, const char *stage, int progress) {
+    work->stage = stage;
+    if(work->progress) {
+        auto *event = new ProgressEvent{stage, progress};
+        if(napi_call_threadsafe_function(work->progress, event, napi_tsfn_nonblocking) != napi_ok)
+            delete event;
+    }
+}
 
 void QuietLog(ChiakiLogLevel, const char *, void *) {}
 
@@ -111,7 +145,7 @@ bool ListDevices(RemoteWork *work, ChiakiHolepunchConsoleType type, std::vector<
 
 void ExecuteRemote(napi_env, void *data) {
     auto *work = static_cast<RemoteWork *>(data);
-    work->stage = "listDevices";
+    ReportProgress(work, "holepunchInit", 20);
     std::vector<Device> devices;
     bool ps5 = ListDevices(work, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5, &devices);
     bool ps4 = ListDevices(work, CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS4, &devices);
@@ -140,20 +174,22 @@ void ExecuteRemote(napi_env, void *data) {
         return;
     }
 
-    work->stage = "holepunchInit";
+    ReportProgress(work, "holepunchWebSocketOpen", 35);
     work->session = chiaki_holepunch_session_init(work->token.c_str(), RemoteLog());
     if(!work->session) { work->error = CHIAKI_ERR_MEMORY; return; }
-    work->stage = "sessionCreate";
+    ReportProgress(work, "holepunchWebSocketOpen", 45);
     work->error = chiaki_holepunch_session_create(work->session);
     if(work->error != CHIAKI_ERR_SUCCESS) return;
-    work->stage = "controlOffer";
+    ReportProgress(work, "holepunchClientJoined", 55);
     work->error = holepunch_session_create_offer(work->session);
     if(work->error != CHIAKI_ERR_SUCCESS) return;
-    work->stage = "sessionStart";
+    ReportProgress(work, "holepunchOfferSent", 65);
     work->error = chiaki_holepunch_session_start(work->session, selected->uid.data(), selected->type);
     if(work->error != CHIAKI_ERR_SUCCESS) return;
-    work->stage = "controlHolepunch";
+    ReportProgress(work, "holepunchCtrlOfferReceived", 80);
     work->error = chiaki_holepunch_session_punch_hole(work->session, CHIAKI_HOLEPUNCH_PORT_TYPE_CTRL);
+    if(work->error == CHIAKI_ERR_SUCCESS)
+        ReportProgress(work, "holepunchCtrlEstablished", 90);
 }
 
 void PreparedFinalizer(napi_env, void *data, void *) {
@@ -165,6 +201,7 @@ void PreparedFinalizer(napi_env, void *data, void *) {
 
 void CompleteRemote(napi_env env, napi_status status, void *data) {
     auto *work = static_cast<RemoteWork *>(data);
+    if(work->progress) napi_release_threadsafe_function(work->progress, napi_tsfn_release);
     if(status != napi_ok || work->error != CHIAKI_ERR_SUCCESS) {
         if(work->session)
             chiaki_holepunch_session_fini(work->session);
@@ -210,12 +247,29 @@ napi_value PrepareRemote(napi_env env, napi_callback_info info) {
         napi_throw_type_error(env, nullptr, "accessToken and valid device selection are required");
         return nullptr;
     }
+    napi_value callback;
+    bool has_callback = false;
+    if(napi_has_named_property(env, args[0], "onProgress", &has_callback) == napi_ok && has_callback &&
+       napi_get_named_property(env, args[0], "onProgress", &callback) == napi_ok) {
+        napi_valuetype callback_type;
+        if(napi_typeof(env, callback, &callback_type) == napi_ok && callback_type == napi_function) {
+            napi_value label;
+            napi_create_string_utf8(env, "ChiakiRemoteProgress", NAPI_AUTO_LENGTH, &label);
+            if(napi_create_threadsafe_function(env, callback, nullptr, label, 0, 1, nullptr,
+                                               nullptr, nullptr, DeliverProgress, &work->progress) != napi_ok) {
+                delete work;
+                napi_throw_error(env, nullptr, "Could not create remote progress callback");
+                return nullptr;
+            }
+        }
+    }
     napi_value promise, name;
     if(napi_create_promise(env, &work->deferred, &promise) != napi_ok ||
        napi_create_string_utf8(env, "ChiakiRemotePrepare", NAPI_AUTO_LENGTH, &name) != napi_ok ||
        napi_create_async_work(env, nullptr, name, ExecuteRemote, CompleteRemote, work, &work->work) != napi_ok ||
        napi_queue_async_work(env, work->work) != napi_ok) {
         if(work->work) napi_delete_async_work(env, work->work);
+        if(work->progress) napi_release_threadsafe_function(work->progress, napi_tsfn_release);
         delete work;
         napi_throw_error(env, nullptr, "Could not start remote preparation");
         return nullptr;
