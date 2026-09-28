@@ -103,6 +103,7 @@ type FfmpegDesktopTarget =
   | "darwin-x64"
   | "linux-arm64"
   | "linux-x64"
+  | "win32-arm64"
   | "win32-x64";
 
 const FFMPEG_BINARY_NAME = IS_WINDOWS ? "ffmpeg.exe" : "ffmpeg";
@@ -111,6 +112,8 @@ const FFMPEG_PACKAGE_DIR_BY_TARGET: Record<FfmpegDesktopTarget, string> = {
   "darwin-x64": "darwin-x64",
   "linux-arm64": "linux-arm64",
   "linux-x64": "linux-x64",
+  // FFmpeg runs as a separate process, so Windows on ARM can use the x64 executable.
+  "win32-arm64": "win32-x64",
   "win32-x64": "win32-x64",
 };
 
@@ -513,6 +516,7 @@ const resolveFfmpegDesktopTarget = (): FfmpegDesktopTarget => {
   if (target === "darwin-x64") return "darwin-x64";
   if (target === "linux-arm64") return "linux-arm64";
   if (target === "linux-x64") return "linux-x64";
+  if (target === "win32-arm64") return "win32-arm64";
   if (target === "win32-x64") return "win32-x64";
   throw new Error(`Unsupported FFmpeg target: ${target}`);
 };

@@ -1,0 +1,53 @@
+name: Windows ARM64 experimental build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/win-arm64
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-11-arm
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          architecture: arm64
+          cache: yarn
+      - uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: arm64
+      - name: Prepare Python dependencies
+        shell: pwsh
+        run: python -m pip install "protobuf==3.20.3" packaging setuptools wheel
+      - name: Build ARM64 native modules and app
+        shell: pwsh
+        run: .\scripts\build-win-arm64.ps1 -VcpkgRoot $env:VCPKG_INSTALLATION_ROOT
+      - name: Check native architectures
+        shell: pwsh
+        run: |
+          $files = @(
+            'peasyo-lib\native\1.0.10\peasyo-lib.win32-arm64-msvc.node',
+            'node_modules\peasyo-sdl-lib\sdl.node-v0.11.13-win32-arm64\sdl.node',
+            'node_modules\peasyo-sdl-lib\sdl.node-v0.11.13-win32-arm64\SDL2.dll'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path $file)) { throw "Missing $file" }
+            $headers = & dumpbin /headers $file | Out-String
+            if ($headers -notmatch 'AA64 machine') { throw "Not ARM64: $file" }
+          }
+      - uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: PeaSyo4Desk-win-arm64-experimental
+          path: dist/win-arm64-unpacked/
+          if-no-files-found: error

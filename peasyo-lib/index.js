@@ -20,6 +20,7 @@ function isMusl() {
 function resolveTarget() {
   if (platform === "win32") {
     if (arch === "x64") return "win32-x64-msvc";
+    if (arch === "arm64") return "win32-arm64-msvc";
     throw new Error(`Unsupported architecture on Windows: ${arch}`);
   }
 
