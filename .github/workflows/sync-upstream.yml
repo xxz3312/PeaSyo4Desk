@@ -1,0 +1,42 @@
+name: Sync upstream
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 11:13 in Hong Kong/China (03:13 UTC), away from the busy hour boundary.
+    - cron: '13 3 * * *'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-upstream-main
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge upstream main and trigger ARM64 build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/Geocld/PeaSyo4Desk.git
+          git fetch upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo 'Already up to date with upstream/main.'
+            exit 0
+          fi
+          git merge --no-edit upstream/main
+          git push origin HEAD:main
+          # A push made with GITHUB_TOKEN does not start push workflows.
+          gh workflow run win-arm64.yml --ref main

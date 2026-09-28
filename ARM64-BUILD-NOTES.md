@@ -29,10 +29,8 @@ and creates `dist\win-arm64-unpacked`.
 
 ## Known limits
 
-- The GitHub Actions workflow produced an ARM64 unpacked package on the
-  Windows ARM runner. This verifies compilation and packaging, but the
-  application has not yet been tested with a console and controller on a
-  user's Windows ARM64 device.
+- The application has launched and detected a controller on a user's Windows
+  on ARM device. Console registration and live streaming still need testing.
 - The supplied `chiaki-lib` is not the same implementation as the desktop
   application's `peasyo-lib`. Its Node binding lacks the
   `remote.listDevices`, `remote.prepareConnection`,

@@ -13,6 +13,16 @@
   PeaSyo桌面客户端，支持windows/macOS/Linux(steamOS)。
 </p>
 
+> **Windows on ARM 分支**：本仓库是 [Geocld/PeaSyo4Desk](https://github.com/Geocld/PeaSyo4Desk) 的非官方 fork，主要提供 Windows ARM64 原生构建。原作者及上游项目请见原仓库。
+
+## Windows on ARM64
+
+在 [Releases](https://github.com/xxz3312/PeaSyo4Desk/releases) 下载名称包含 `win-arm64` 的 ZIP，**完整解压**后运行 `PeaSyo4Desk.exe`；无需单独安装 Node.js。请勿混用旧版本中的 `.node` 或 DLL。ARM64 构建包含 Chiaki 原生模块、SDL2 手柄模块及 ARM64 VC 运行库，FFmpeg 子进程使用 Windows on ARM 的 x64 兼容能力。
+
+已在 Windows on ARM 设备上确认应用可以启动并识别手柄。PS4/PS5 实际串流尚未在此 fork 中验证；当前 Chiaki 模块缺少上游桌面版的部分 `remote.*` 接口，互联网远程连接可能无法使用。详情见 [ARM64 构建说明](./ARM64-BUILD-NOTES.md)。
+
+本 fork 每天检查上游 `main`；有新提交且可以无冲突合并时，自动构建并发布 Windows ARM64 ZIP。同步冲突或构建失败会在 [Actions](https://github.com/xxz3312/PeaSyo4Desk/actions) 显示，不会发布失败版本。你也可以手动运行 `Sync upstream` 或 `Windows ARM64 build and release` 工作流。
+
 ## Intro
 
 PeaSyo，也称貔貅（pixiu），使用中国古代神兽命名，是一款PS4/5串流应用，支持远程唤醒、远程串流、按键映射、手柄振动等丰富的功能，你可以在任意Android设备上使用貔貅游玩PlayStation游戏。
@@ -54,7 +64,7 @@ PeaSyo，也称貔貅（pixiu），使用中国古代神兽命名，是一款PS4
 克隆本项目到本地:
 
 ```
-git clone https://github.com/Geocld/PeaSyo4Desk
+git clone https://github.com/xxz3312/PeaSyo4Desk
 cd PeaSyo4Desk
 ```
 安装依赖:

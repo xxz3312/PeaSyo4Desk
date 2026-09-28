@@ -13,7 +13,17 @@
   PlayStation remote play client, PeaSyo desktop client for windows/macOS/Linux(steamOS).
 </p>
 
+> **Windows on ARM fork:** This is an unofficial fork of [Geocld/PeaSyo4Desk](https://github.com/Geocld/PeaSyo4Desk) focused on native Windows ARM64 builds. Credit for the original project belongs to its upstream maintainers.
+
 **English** | [中文](./README.zh_CN.md)
+
+## Windows on ARM64
+
+Download the `win-arm64` ZIP from [Releases](https://github.com/xxz3312/PeaSyo4Desk/releases), extract the **entire** archive, and run `PeaSyo4Desk.exe`. Node.js is not required on the target PC. Keep the included native modules and DLLs together. The package includes ARM64 Chiaki and SDL2 bindings and ARM64 VC runtime files; FFmpeg runs as an x64 child process through Windows on ARM compatibility.
+
+The app has been confirmed to launch and detect a controller on a Windows on ARM device. PS4/PS5 streaming has not yet been verified for this fork. The Chiaki binding lacks some of the original desktop `remote.*` APIs, so internet remote connection may be unavailable. See [ARM64 build notes](./ARM64-BUILD-NOTES.md).
+
+This fork checks upstream `main` daily. When a new commit merges cleanly, it builds and publishes a Windows ARM64 ZIP automatically. Sync conflicts and failed builds are reported in [Actions](https://github.com/xxz3312/PeaSyo4Desk/actions) without publishing a broken release. Both the sync and build workflows can also be started manually.
 
 ## Intro
 
@@ -55,7 +65,7 @@ PeaSyo, also known as Pixiu, is a PS4/5 streaming application for Android that s
 Clone the repository:
 
 ```
-git clone https://github.com/Geocld/PeaSyo4Desk
+git clone https://github.com/xxz3312/PeaSyo4Desk
 cd PeaSyo4Desk
 ```
 
