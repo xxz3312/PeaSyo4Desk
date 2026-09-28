@@ -29,9 +29,22 @@ jobs:
       - name: Prepare Python dependencies
         shell: pwsh
         run: python -m pip install "protobuf==3.20.3" packaging setuptools wheel
+      - uses: actions/cache/restore@v4
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-arm64-windows-static-v1
       - name: Build ARM64 native modules and app
         shell: pwsh
-        run: .\scripts\build-win-arm64.ps1 -VcpkgRoot $env:VCPKG_INSTALLATION_ROOT
+        env:
+          VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\.vcpkg-cache,readwrite
+        run: |
+          New-Item -ItemType Directory -Force .vcpkg-cache | Out-Null
+          .\scripts\build-win-arm64.ps1 -VcpkgRoot $env:VCPKG_INSTALLATION_ROOT
+      - uses: actions/cache/save@v4
+        if: always()
+        with:
+          path: .vcpkg-cache
+          key: vcpkg-arm64-windows-static-v1
       - name: Check native architectures
         shell: pwsh
         run: |
