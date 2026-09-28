@@ -40,7 +40,7 @@ finally { Pop-Location }
 # vcpkg provides ARM64 OpenSSL, curl and zlib. The chiaki-lib bundled
 # OpenSSL 1.1.1s configuration selects the x64 target on Windows ARM64.
 Run (Join-Path $VcpkgRoot 'vcpkg.exe') @(
-  'install', 'openssl:arm64-windows-static', 'curl:arm64-windows-static',
+  'install', 'openssl:arm64-windows-static', 'curl[websockets]:arm64-windows-static',
   'zlib:arm64-windows-static'
 )
 $toolchain = Join-Path $VcpkgRoot 'scripts\buildsystems\vcpkg.cmake'

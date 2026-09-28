@@ -4122,6 +4122,7 @@ function StreamPage() {
     const start = async () => {
       let rawStreamListener: any = null;
       let streamProgressListener: any = null;
+      let autoRemoteRequested = false;
       try {
         disconnectingRef.current = false;
         connectedToastShownRef.current = false;
@@ -4178,6 +4179,7 @@ function StreamPage() {
         let pendingConfig: PendingStreamConfig;
         try {
           pendingConfig = JSON.parse(raw);
+          autoRemoteRequested = !!pendingConfig?.autoRemote;
         } catch (error) {
           setStatus(
             t("PendingConfigParseFailed", {
@@ -4491,9 +4493,11 @@ function StreamPage() {
         clearFirstFrameWatchdog();
         pendingNativePacketsRef.current = [];
         setStatus(
-          t("StartSessionFailedWithReason", {
-            reason: error?.message || String(error),
-          })
+          autoRemoteRequested
+            ? t("Session error")
+            : t("StartSessionFailedWithReason", {
+                reason: error?.message || String(error),
+              })
         );
         setConnectState("error");
       }

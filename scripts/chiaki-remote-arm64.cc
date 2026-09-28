@@ -5,6 +5,7 @@
 #include <chiaki/common.h>
 #include <chiaki/log.h>
 #include <chiaki/remote/holepunch.h>
+#include <curl/curl.h>
 
 #include <algorithm>
 #include <array>
@@ -321,5 +322,20 @@ napi_status RegisterArm64Remote(napi_env env, napi_value exports) {
     napi_property_descriptor descriptor = {
         "remotePrepareSession", nullptr, PrepareRemote, nullptr, nullptr, nullptr, napi_default, nullptr
     };
-    return napi_define_properties(env, exports, 1, &descriptor);
+    napi_status status = napi_define_properties(env, exports, 1, &descriptor);
+    if(status != napi_ok) return status;
+    bool websocket_supported = false;
+    const curl_version_info_data *version = curl_version_info(CURLVERSION_NOW);
+    if(version && version->protocols) {
+        for(const char *const *protocol = version->protocols; *protocol; ++protocol) {
+            if(std::strcmp(*protocol, "wss") == 0) {
+                websocket_supported = true;
+                break;
+            }
+        }
+    }
+    napi_value supported;
+    status = napi_get_boolean(env, websocket_supported, &supported);
+    if(status != napi_ok) return status;
+    return napi_set_named_property(env, exports, "remoteWebSocketSupported", supported);
 }
