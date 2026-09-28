@@ -12,6 +12,7 @@ concurrency:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -19,6 +20,16 @@ jobs:
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
+      - name: Ensure scheduled upstream sync is enabled
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api --method PUT "repos/$env:GITHUB_REPOSITORY/actions/workflows/sync-upstream.yml/enable"
+          if ($LASTEXITCODE -ne 0) { throw 'Could not enable the scheduled upstream sync workflow' }
+          $state = gh api "repos/$env:GITHUB_REPOSITORY/actions/workflows/sync-upstream.yml" --jq .state
+          if ($LASTEXITCODE -ne 0 -or $state -ne 'active') { throw "Upstream sync workflow state: $state" }
+          Write-Host "Upstream sync workflow state: $state"
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
