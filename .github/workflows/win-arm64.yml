@@ -93,24 +93,43 @@ jobs:
           @'
           const fs = require('fs');
           try {
-            const binding = require(process.argv[2]);
-            if (typeof binding.Session !== 'function') throw Error('Missing Session');
-            fs.writeFileSync(process.argv[3], `loaded with Electron ${process.versions.electron}`);
+            if (process.argv[3]) {
+              const binding = require(process.argv[3]);
+              if (typeof binding.Session !== 'function') throw Error('Missing Session');
+            }
+            fs.writeFileSync(process.argv[2], `loaded with Electron ${process.versions.electron}, binding=${!!process.argv[3]}`);
           } catch (error) {
-            fs.writeFileSync(process.argv[3], error.stack || String(error));
+            fs.writeFileSync(process.argv[2], error.stack || String(error));
             process.exitCode = 1;
           }
           '@ | Set-Content $probe
-          $exe = (Resolve-Path 'dist\win-arm64-unpacked\PeaSyo4Desk.exe').Path
-          $process = Start-Process -FilePath $exe -ArgumentList @($probe, $addon, $result) -PassThru
-          if (-not $process.WaitForExit(30000)) {
-            Stop-Process -Id $process.Id -Force
-            throw 'Packaged Electron probe timed out'
+          $executables = @(
+            (Resolve-Path 'node_modules\electron\dist\electron.exe').Path,
+            (Resolve-Path 'dist\win-arm64-unpacked\PeaSyo4Desk.exe').Path
+          )
+          foreach ($exe in $executables) {
+            foreach ($loadBinding in @($false, $true)) {
+              Remove-Item $result -ErrorAction SilentlyContinue
+              $arguments = @($probe, $result)
+              if ($loadBinding) { $arguments += $addon }
+              $process = Start-Process -FilePath $exe -ArgumentList $arguments -PassThru
+              if (-not $process.WaitForExit(30000)) {
+                Stop-Process -Id $process.Id -Force
+                throw "Electron probe timed out: $exe binding=$loadBinding"
+              }
+              $code = $process.ExitCode
+              Write-Host "Probe $exe binding=$loadBinding exit=$code"
+              if (Test-Path $result) { Get-Content $result }
+              if ($code -ne 0 -or -not (Test-Path $result)) {
+                throw "Electron probe failed: $exe binding=$loadBinding exit=$code"
+              }
+            }
           }
-          $code = $process.ExitCode
-          if (-not (Test-Path $result)) { throw "Electron did not execute the probe (exit $code)" }
-          Get-Content $result
-          if ($code -ne 0) { throw "Packaged Electron could not load Chiaki (exit $code)" }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: arm64-native-diagnostic
+          path: dist/win-arm64-unpacked/resources/app.asar.unpacked/peasyo-lib/native/1.0.10/peasyo-lib.win32-arm64-msvc.node
       - uses: actions/upload-artifact@v4
         if: success()
         with:
