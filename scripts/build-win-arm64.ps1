@@ -91,6 +91,7 @@ if (-not (Test-Path $sdlSource)) {
 $sdlInstall = Join-Path $WorkRoot 'sdl-install'
 Run cmake @('-S', $sdlSource, '-B', (Join-Path $WorkRoot 'sdl-build'),
   '-G', 'Ninja', '-DCMAKE_BUILD_TYPE=Release', "-DCMAKE_INSTALL_PREFIX=$sdlInstall",
+  '-DCMAKE_C_FLAGS=/forceInterlockedFunctions-',
   '-DSDL_SHARED=ON', '-DSDL_STATIC=OFF', '-DSDL_TESTS=OFF')
 Run cmake @('--build', (Join-Path $WorkRoot 'sdl-build'), '--parallel')
 Run cmake @('--install', (Join-Path $WorkRoot 'sdl-build'))
