@@ -89,6 +89,18 @@ void DiagnosticLog(ChiakiLogLevel, const char *message, void *) {
         remote_start_diagnostic += line.substr(0, 180);
         return;
     }
+    // Keep the fixed diagnostic text from Chiaki's session-start parser.
+    // Never include its optional JSON payload, identifiers, or credentials.
+    if(line.find("chiaki_holepunch_session_start:") != std::string::npos &&
+       (line.find("JSON does not contain") != std::string::npos ||
+        line.find("unexpected length") != std::string::npos ||
+        line.find("Failed to decode") != std::string::npos ||
+        line.find("holepunch session does not contain console") != std::string::npos)) {
+        std::lock_guard<std::mutex> lock(diagnostic_mutex);
+        if(remote_start_diagnostic.size() < 1200)
+            remote_start_diagnostic += "; chiaki session start rejected notification";
+        return;
+    }
     // Chiaki also logs the OAuth header. Only retain known WebSocket failure
     // messages; never include arbitrary native logs or PSN credentials.
     if(line.find("Connecting to push notification WebSocket") == std::string::npos &&

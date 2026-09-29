@@ -95,6 +95,52 @@ chiaki_mutex_lock(&session->state_mutex);
     throw 'Unexpected Chiaki session-start timeout handling.'
   }
   $holepunchText = $holepunchText.Replace($startTimeout, $startTimeoutDetail.TrimEnd() + "`n            " + $startTimeout)
+  # PSN member notifications may include the client or multiple members.
+  # The older Chiaki code checks only members[0] and aborts before processing
+  # the console's customData1 notification when that entry is not the PS5.
+  $memberRegex = [regex]::new('json_object \*member_duid_json = NULL;.*?session->state \|= SESSION_STATE_CONSOLE_JOINED;', [Text.RegularExpressions.RegexOptions]::Singleline)
+  $memberReplacement = @'
+json_object *members = NULL;
+            json_pointer_get(notif->json, "/body/data/members", &members);
+            bool console_member_found = false;
+            if (members && json_object_is_type(members, json_type_array))
+            {
+                for (size_t member_index = 0; member_index < json_object_array_length(members); ++member_index)
+                {
+                    json_object *member = json_object_array_get_idx(members, member_index);
+                    json_object *member_duid_json = NULL;
+                    if (!member || !json_object_object_get_ex(member, "deviceUniqueId", &member_duid_json) ||
+                        !json_object_is_type(member_duid_json, json_type_string))
+                        continue;
+                    const char *member_duid = json_object_get_string(member_duid_json);
+                    if (strlen(member_duid) != 64)
+                        continue;
+                    uint8_t duid_bytes[32];
+                    if (hex_to_bytes(member_duid, duid_bytes, sizeof(duid_bytes)) != CHIAKI_ERR_SUCCESS)
+                        continue;
+                    if (console_type == CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS5 &&
+                        memcmp(duid_bytes, session->console_uid, sizeof(session->console_uid)) != 0)
+                        continue;
+                    if (console_type == CHIAKI_HOLEPUNCH_CONSOLE_TYPE_PS4)
+                        memcpy(session->console_uid, duid_bytes, sizeof(duid_bytes));
+                    console_member_found = true;
+                    break;
+                }
+            }
+            if (!console_member_found)
+            {
+                CHIAKI_LOGE(session->log, "arm64 remote ignored unrelated member notification");
+                clear_notification(session, notif);
+                chiaki_mutex_unlock(&session->state_mutex);
+                continue;
+            }
+            CHIAKI_LOGE(session->log, "arm64 remote target console joined");
+            session->state |= SESSION_STATE_CONSOLE_JOINED;
+'@
+  if ($memberRegex.Matches($holepunchText).Count -ne 1) {
+    throw 'Unexpected Chiaki console member parsing.'
+  }
+  $holepunchText = $memberRegex.Replace($holepunchText, $memberReplacement.TrimEnd(), 1)
   $commandAccepted = 'session->state |= SESSION_STATE_DATA_SENT;'
   if (-not $holepunchText.Contains($commandAccepted)) {
     throw 'Unexpected Chiaki PSN remote command handling.'
