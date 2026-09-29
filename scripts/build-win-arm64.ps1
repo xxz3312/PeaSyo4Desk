@@ -184,6 +184,32 @@ json_object *custom_data1_json = NULL;
     throw 'Unexpected Chiaki customData1 parsing.'
   }
   $holepunchText = $customRegex.Replace($holepunchText, $customReplacement.TrimEnd(), 1)
+  # Newer Chiaki accepts up to four trailing bytes in PSN customData1.
+  # Older chiaki-lib rejects the whole value when the decoded size is not 16.
+  $decodeRegex = [regex]::new('static ChiakiErrorCode decode_customdata1\(const char \*customdata1, uint8_t \*out, size_t out_len\)\s*\{.*?\n\}', [Text.RegularExpressions.RegexOptions]::Singleline)
+  $decodeReplacement = @'
+static ChiakiErrorCode decode_customdata1(const char *customdata1, uint8_t *out, size_t out_len)
+{
+    uint8_t round1[24];
+    uint8_t round2[24];
+    size_t round1_len = sizeof(round1);
+    size_t round2_len = sizeof(round2);
+    ChiakiErrorCode err = chiaki_base64_decode(customdata1, strlen(customdata1), round1, &round1_len);
+    if (err != CHIAKI_ERR_SUCCESS)
+        return err;
+    err = chiaki_base64_decode((const char *)round1, round1_len, round2, &round2_len);
+    if (err != CHIAKI_ERR_SUCCESS)
+        return err;
+    if (round2_len < out_len || round2_len > out_len + 4)
+        return CHIAKI_ERR_INVALID_DATA;
+    memcpy(out, round2, out_len);
+    return CHIAKI_ERR_SUCCESS;
+}
+'@
+  if ($decodeRegex.Matches($holepunchText).Count -ne 1) {
+    throw 'Unexpected Chiaki customData1 decoder.'
+  }
+  $holepunchText = $decodeRegex.Replace($holepunchText, $decodeReplacement.TrimEnd(), 1)
   $commandAccepted = 'session->state |= SESSION_STATE_DATA_SENT;'
   if (-not $holepunchText.Contains($commandAccepted)) {
     throw 'Unexpected Chiaki PSN remote command handling.'
