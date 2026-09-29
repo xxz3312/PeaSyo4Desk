@@ -2111,7 +2111,7 @@ const setLoginPin = (pin: any, source = "ipc") => {
       source,
       pinLength: normalizedPin.length,
     });
-    streamSession.setLoginPin(normalizedPin);
+    streamSession.setLoginPin(Buffer.from(normalizedPin, "ascii"));
     verboseLog("login-pin", "native binding accepted pin submission", {
       source,
       pinLength: normalizedPin.length,
