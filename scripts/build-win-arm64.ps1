@@ -141,6 +141,49 @@ json_object *members = NULL;
     throw 'Unexpected Chiaki console member parsing.'
   }
   $holepunchText = $memberRegex.Replace($holepunchText, $memberReplacement.TrimEnd(), 1)
+  $customRegex = [regex]::new('json_object \*custom_data1_json = NULL;.*?session->state \|= SESSION_STATE_CUSTOMDATA1_RECEIVED;', [Text.RegularExpressions.RegexOptions]::Singleline)
+  $customReplacement = @'
+json_object *custom_data1_json = NULL;
+            json_pointer_get(notif->json, "/body/data/customData1", &custom_data1_json);
+            if (!custom_data1_json || !json_object_is_type(custom_data1_json, json_type_string))
+            {
+                CHIAKI_LOGE(session->log, "arm64 remote ignored customData1 notification without string field");
+                clear_notification(session, notif);
+                chiaki_mutex_unlock(&session->state_mutex);
+                continue;
+            }
+            const char *custom_data1 = json_object_get_string(custom_data1_json);
+            size_t custom_data1_len = strlen(custom_data1);
+            if (custom_data1_len == 32)
+                err = decode_customdata1(custom_data1, session->custom_data1, sizeof(session->custom_data1));
+            else if (custom_data1_len == 24)
+            {
+                size_t decoded_len = sizeof(session->custom_data1);
+                err = chiaki_base64_decode(custom_data1, custom_data1_len, session->custom_data1, &decoded_len);
+                if (err == CHIAKI_ERR_SUCCESS && decoded_len != sizeof(session->custom_data1))
+                    err = CHIAKI_ERR_INVALID_DATA;
+            }
+            else
+            {
+                CHIAKI_LOGE(session->log, "arm64 remote ignored customData1 length=%zu", custom_data1_len);
+                clear_notification(session, notif);
+                chiaki_mutex_unlock(&session->state_mutex);
+                continue;
+            }
+            if (err != CHIAKI_ERR_SUCCESS)
+            {
+                CHIAKI_LOGE(session->log, "arm64 remote ignored customData1 decode error=%d length=%zu", err, custom_data1_len);
+                clear_notification(session, notif);
+                chiaki_mutex_unlock(&session->state_mutex);
+                continue;
+            }
+            CHIAKI_LOGE(session->log, "arm64 remote customData1 decoded length=%zu", custom_data1_len);
+            session->state |= SESSION_STATE_CUSTOMDATA1_RECEIVED;
+'@
+  if ($customRegex.Matches($holepunchText).Count -ne 1) {
+    throw 'Unexpected Chiaki customData1 parsing.'
+  }
+  $holepunchText = $customRegex.Replace($holepunchText, $customReplacement.TrimEnd(), 1)
   $commandAccepted = 'session->state |= SESSION_STATE_DATA_SENT;'
   if (-not $holepunchText.Contains($commandAccepted)) {
     throw 'Unexpected Chiaki PSN remote command handling.'
