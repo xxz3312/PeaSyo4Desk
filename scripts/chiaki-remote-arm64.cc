@@ -84,6 +84,7 @@ void DiagnosticLog(ChiakiLogLevel, const char *message, void *) {
     const std::string line(message);
     if(line.find("arm64 remote ") != std::string::npos) {
         std::lock_guard<std::mutex> lock(diagnostic_mutex);
+        if(remote_start_diagnostic.size() >= 1200) return;
         if(!remote_start_diagnostic.empty()) remote_start_diagnostic += "; ";
         remote_start_diagnostic += line.substr(0, 180);
         return;

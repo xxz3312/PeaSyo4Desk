@@ -104,6 +104,20 @@ chiaki_mutex_lock(&session->state_mutex);
     'curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &arm64_remote_http_code);' + "`n    " +
     'CHIAKI_LOGE(session->log, "arm64 remote command accepted http=%ld", arm64_remote_http_code);' + "`n    " +
     $commandAccepted)
+  # Record only notification types and transport failures. Never log PSN payloads.
+  $notificationMarker = 'NotificationType type = parse_notification_type(session->log, json);'
+  if (-not $holepunchText.Contains($notificationMarker)) {
+    throw 'Unexpected Chiaki notification parsing.'
+  }
+  $holepunchText = $holepunchText.Replace($notificationMarker,
+    $notificationMarker + "`n            " +
+    'CHIAKI_LOGE(session->log, "arm64 remote notification type=%d", type);')
+  $wsCleanupMarker = 'session->ws_open = false;'
+  if (-not $holepunchText.Contains($wsCleanupMarker)) {
+    throw 'Unexpected Chiaki WebSocket cleanup.'
+  }
+  $holepunchText = $holepunchText.Replace($wsCleanupMarker,
+    'CHIAKI_LOGE(session->log, "arm64 remote websocket closed");' + "`n    " + $wsCleanupMarker)
   $connectMarker = 'res = curl_easy_setopt(curl, CURLOPT_CONNECT_ONLY, 2L);'
   if (-not $holepunchText.Contains($connectMarker)) {
     throw 'Unexpected Chiaki WebSocket connect setup.'
