@@ -488,7 +488,13 @@ try {
   Run (Get-Command yarn).Source @('electron-builder', '--win', '--arm64', '--dir')
   # vcpkg's static libraries still use the dynamic MSVC runtime. Bundle the
   # redistributable ARM64 CRT beside the Electron executable for clean hosts.
-  $crtDir = Join-Path $env:VCToolsRedistDir 'arm64\Microsoft.VC143.CRT'
+  $crtArm64 = Join-Path $env:VCToolsRedistDir 'arm64'
+  $crtDir = Get-ChildItem $crtArm64 -Directory -Filter 'Microsoft.VC*.CRT' |
+    Where-Object {
+      (Test-Path (Join-Path $_.FullName 'msvcp140.dll')) -and
+      (Test-Path (Join-Path $_.FullName 'vcruntime140.dll'))
+    } | Sort-Object Name -Descending | Select-Object -First 1 -ExpandProperty FullName
+  if (-not $crtDir) { throw "ARM64 VC runtime directory is missing under $crtArm64." }
   $outDir = Join-Path $AppRoot 'dist\win-arm64-unpacked'
   foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll')) {
     $source = Join-Path $crtDir $dll
