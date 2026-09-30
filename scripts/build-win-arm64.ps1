@@ -448,6 +448,8 @@ if (-not (Test-Path $sdlNode)) {
 Push-Location $sdlNode
 try {
   Run npm @('ci', '--ignore-scripts')
+  # node-gyp 11 bundled by node-sdl cannot discover Visual Studio 2026.
+  Run npm @('install', '--no-save', '--package-lock=false', '--ignore-scripts', 'node-gyp@13.0.2')
   $env:SDL_INC = Join-Path $sdlInstall 'include\SDL2'
   $env:SDL_LIB = Join-Path $sdlInstall 'lib'
   Run (Join-Path $sdlNode 'node_modules\.bin\node-gyp.cmd') @('rebuild', '--arch=arm64')
