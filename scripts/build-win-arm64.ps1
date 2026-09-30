@@ -240,6 +240,127 @@ static ChiakiErrorCode decode_customdata1(const char *customdata1, uint8_t *out,
   $holepunchText = $holepunchText.Replace($connectMarker,
     'curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);' + "`n    " + $connectMarker)
   [IO.File]::WriteAllText($holepunchFile, $holepunchText)
+
+  # Retry INIT and COOKIE only on timeout, keeping the same tags and cookie.
+  # Cancellation, malformed replies and socket errors still fail immediately.
+  $takionFile = Join-Path $chiaki 'lib\src\takion.c'
+  $takionText = [IO.File]::ReadAllText($takionFile)
+  $handshakeRegex = [regex]::new('static ChiakiErrorCode takion_handshake\(ChiakiTakion \*takion, uint32_t \*seq_num_remote_initial\)\s*\{.*?\n\}', [Text.RegularExpressions.RegexOptions]::Singleline)
+  $handshakeReplacement = @'
+static ChiakiErrorCode takion_handshake(ChiakiTakion *takion, uint32_t *seq_num_remote_initial)
+{
+	ChiakiErrorCode err;
+
+	// INIT ->
+
+	TakionMessagePayloadInit init_payload;
+	init_payload.tag = takion->tag_local;
+	init_payload.a_rwnd = TAKION_A_RWND;
+	init_payload.outbound_streams = TAKION_OUTBOUND_STREAMS;
+	init_payload.inbound_streams = TAKION_INBOUND_STREAMS;
+	init_payload.initial_seq_num = takion->seq_num_local;
+	int tries = 0;
+	TakionMessagePayloadInitAck init_ack_payload;
+	for(; tries < 3; tries++)
+	{
+		if(tries > 0)
+			CHIAKI_LOGW(takion->log, "Takion hasn't received init ack yet, retrying init [attempt %d] ...", tries + 1);
+		memset(&init_ack_payload, 0, sizeof(TakionMessagePayloadInitAck));
+		err = takion_send_message_init(takion, &init_payload);
+		if(err != CHIAKI_ERR_SUCCESS)
+		{
+			CHIAKI_LOGE(takion->log, "Takion failed to send init");
+			return err;
+		}
+
+		CHIAKI_LOGI(takion->log, "Takion sent init");
+
+		// INIT_ACK <-
+		err = takion_recv_message_init_ack(takion, &init_ack_payload);
+		if(err != CHIAKI_ERR_TIMEOUT)
+			break;
+	}
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(takion->log, "Takion failed to receive init ack");
+		return err;
+	}
+
+	if(init_ack_payload.tag == 0)
+	{
+		CHIAKI_LOGE(takion->log, "Takion remote tag in init ack is 0");
+		return CHIAKI_ERR_INVALID_RESPONSE;
+	}
+
+	CHIAKI_LOGI(takion->log, "Takion received init ack with remote tag %#x, outbound streams: %#x, inbound streams: %#x",
+		init_ack_payload.tag, init_ack_payload.outbound_streams, init_ack_payload.inbound_streams);
+
+	takion->tag_remote = init_ack_payload.tag;
+	*seq_num_remote_initial = takion->tag_remote; //init_ack_payload.initial_seq_num;
+
+	if(init_ack_payload.outbound_streams == 0 || init_ack_payload.inbound_streams == 0 || init_ack_payload.outbound_streams > TAKION_INBOUND_STREAMS || init_ack_payload.inbound_streams < TAKION_OUTBOUND_STREAMS)
+	{
+		CHIAKI_LOGE(takion->log, "Takion min/max check failed");
+		return CHIAKI_ERR_INVALID_RESPONSE;
+	}
+
+	// COOKIE ->
+	tries = 0;
+	for(; tries < 3; tries++)
+	{
+		if(tries > 0)
+			CHIAKI_LOGW(takion->log, "Takion hasn't received cookie ack yet, resending cookie [attempt %d] ...", tries + 1);
+		err = takion_send_message_cookie(takion, init_ack_payload.cookie);
+		if(err != CHIAKI_ERR_SUCCESS)
+		{
+			CHIAKI_LOGE(takion->log, "Takion failed to send cookie");
+			return err;
+		}
+
+		CHIAKI_LOGI(takion->log, "Takion sent cookie");
+
+
+		// COOKIE_ACK <-
+
+		err = takion_recv_message_cookie_ack(takion);
+		if(err != CHIAKI_ERR_TIMEOUT)
+			break;
+	}
+	if(err != CHIAKI_ERR_SUCCESS)
+	{
+		CHIAKI_LOGE(takion->log, "Takion failed to receive cookie ack");
+		return err;
+	}
+
+	CHIAKI_LOGI(takion->log, "Takion received cookie ack");
+
+
+	// done!
+
+	CHIAKI_LOGI(takion->log, "Takion connected");
+
+	return CHIAKI_ERR_SUCCESS;
+}
+'@
+  if ($handshakeRegex.Matches($takionText).Count -ne 1) {
+    throw 'Unexpected Chiaki Takion handshake; inspect the retry patch.'
+  }
+  $takionText = $handshakeRegex.Replace($takionText, $handshakeReplacement.TrimEnd(), 1)
+  [IO.File]::WriteAllText($takionFile, $takionText)
+  # INIT and COOKIE can each wait 3 * 5 seconds. Extend only the initial
+  # connection wait; preserve normal timeouts for later protocol messages.
+  foreach ($relativePath in @('lib\src\streamconnection.c', 'lib\src\senkusha.c')) {
+    $connectionFile = Join-Path $chiaki $relativePath
+    $connectionText = [IO.File]::ReadAllText($connectionFile)
+    $connectionWaitRegex = [regex]::new('chiaki_cond_timedwait_pred\(([^;\r\n]*?), EXPECT_TIMEOUT_MS, state_finished_cond_check, ([^;\r\n]*?)\);')
+    if (-not $connectionWaitRegex.IsMatch($connectionText)) {
+      throw "Unexpected initial Takion connection wait in $relativePath."
+    }
+    $connectionText = $connectionWaitRegex.Replace($connectionText,
+      'chiaki_cond_timedwait_pred($1, 35000, state_finished_cond_check, $2);', 1)
+    [IO.File]::WriteAllText($connectionFile, $connectionText)
+  }
+
   $addonFile = Join-Path $chiaki 'node\addon.cc'
   $addonText = [IO.File]::ReadAllText($addonFile)
   $addonMarker = 'extern napi_status RegisterCoreApiClasses(napi_env env, napi_value exports);'
